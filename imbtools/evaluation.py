@@ -7,6 +7,7 @@ the performance of various oversampling algorithms.
 
 import pandas as pd
 from os import listdir, chdir
+from os.path import join
 from re import match, sub
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.model_selection import cross_val_score
@@ -50,15 +51,15 @@ def optimize_hyperparameters(X, y, clf, param_grid, cv):
 
 
 class BinaryExperiment:
-    """Class for comparison of oversampling algorithms performance 
+    """Class for comparison of oversampling algorithms performance
     on imbalanced binary classification problems.
-    
+
     Parameters
     ----------
     datasets : str or list of (X, y) tuples or dictionary of dataset-name:(X,y) pairs
-        The string is a path to the directory which contains the imbalanced data in 
-        csv format. The list of (X, y) pairs is a list of tuples of input data and 
-        target values, The dictionary extends the list by adding the datasets names 
+        The string is a path to the directory which contains the imbalanced data in
+        csv format. The list of (X, y) pairs is a list of tuples of input data and
+        target values, The dictionary extends the list by adding the datasets names
         as a key.
     classifiers : list of classifiers
         A list of classifiers.
@@ -81,14 +82,14 @@ class BinaryExperiment:
         The number of CPUs to use to do the computation. -1 means ‘all CPUs’.
     """
 
-    def __init__(self, 
+    def __init__(self,
                  datasets,
                  classifiers,
-                 oversampling_methods, 
+                 oversampling_methods,
                  metrics=[roc_auc_score, f1_score, geometric_mean_score],
-                 n_splits=3, 
-                 experiment_repetitions=5, 
-                 random_state=None, 
+                 n_splits=3,
+                 experiment_repetitions=5,
+                 random_state=None,
                  param_grids=None,
                  n_jobs=1,
                  cache_tasks=True):
@@ -108,11 +109,10 @@ class BinaryExperiment:
 
         # Read csv files and save them to a dictionary
         if isinstance(self.datasets, str):
-            chdir(self.datasets)
             self.datasets_ = {}
-            csv_files = [csv_file for csv_file in listdir() if match('^.+\.csv$', csv_file)]
+            csv_files = [csv_file for csv_file in listdir(self.datasets) if match('^.+\.csv$', csv_file)]
             for csv_file in csv_files:
-                dataset = pd.read_csv(csv_file)
+                dataset = pd.read_csv(join(self.datasets,csv_file))
                 X, y = dataset.iloc[:, :-1], dataset.iloc[:, -1]
                 dataset_name = sub(".csv", "", csv_file)
                 self.datasets_[dataset_name] = (X, y)
@@ -124,7 +124,7 @@ class BinaryExperiment:
         # If a dict of dataset-name:(X,y) pairs is given, copy to a new attribute
         if isinstance(self.datasets, dict):
             self.datasets_ = self.datasets
-        
+
         # Create random states for experiments
         get_seed = lambda s,i: (s - i) if (s - i) >= 0 else (s + i) # subtract experiment index from random seed for each experiment
         self.random_states_ = [get_seed(self.random_state, index) for index in range(self.experiment_repetitions)] if self.random_state is not None else [None] * self.experiment_repetitions
@@ -139,7 +139,7 @@ class BinaryExperiment:
             self.param_grids_ = dict(zip(self.classifiers_.keys(), [None] * len(self.classifiers)))
         else:
             raise ValueError("The parameter param_grid should be a list of hyperparameters grids with length equal to the number of classifiers.")
-            
+
         # Converts metrics to scores
         self.scorers_ = dict(zip(self.metrics_.keys(), [make_scorer(metric) if metric is not roc_auc_score else make_scorer(metric, needs_threshold=True) for metric in self.metrics]))
 
@@ -152,9 +152,9 @@ class BinaryExperiment:
             dataset_summary = pd.DataFrame([[dataset_name, X.shape[1], y.size, n_instances[1], n_instances[0], round(n_instances[0] / n_instances[1], 2)]], columns=self.datasets_summary_.columns)
             self.datasets_summary_ = self.datasets_summary_.append(dataset_summary, ignore_index=True)
         self.datasets_summary_[self.datasets_summary_.columns[1:-1]] = self.datasets_summary_[self.datasets_summary_.columns[1:-1]].astype(int)
-        
+
     def run(self, logging_results=True):
-        """Runs the experimental procedure and calculates the cross validation 
+        """Runs the experimental procedure and calculates the cross validation
         scores for each classifier, oversampling method, datasets and metric."""
         self._initialize_parameters()
         self._summarize_datasets()
@@ -206,13 +206,13 @@ class BinaryExperiment:
             self.std_cv_results_ = grouped_results.std().reset_index().rename(columns={'CV score': 'Std CV score'})
         else:
             self.std_cv_results_ = "Standard deviation is not calculated. More than one experiment repetition is needed."
-        
+
         # Transform mean results to wide format
         mean_cv_results_wide = self.mean_cv_results_.pivot_table(index=['Dataset', 'Classifier', 'Metric'], columns=['Oversampling method'], values='Mean CV score').reset_index()
         mean_cv_results_wide.columns.rename(None, inplace=True)
 
         # Calculate mean ranking for each classifier/metric across datasets
-        ranking_results = pd.concat([mean_cv_results_wide[['Classifier', "Metric"]], mean_cv_results_wide.apply(lambda row: len(row[3:]) - row[3:].argsort().argsort(), axis=1)], axis=1)    
+        ranking_results = pd.concat([mean_cv_results_wide[['Classifier', "Metric"]], mean_cv_results_wide.apply(lambda row: len(row[3:]) - row[3:].argsort().argsort(), axis=1)], axis=1)
         self.mean_ranking_results_ = round(ranking_results.groupby(['Classifier', 'Metric']).mean(), 2)
 
         # Calculate Friedman test p-values
