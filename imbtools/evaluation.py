@@ -1,21 +1,23 @@
 """
-This module contains classes to compare and evaluate 
+This module contains classes to compare and evaluate
 the performance of various oversampling algorithms.
 """
 
 # Author: Georgios Douzas <gdouzas@icloud.com>
 
 import pandas as pd
+import numpy as np
 from os import listdir, chdir
 from re import match, sub
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score, f1_score
+from sklearn.metrics import roc_auc_score, f1_score, roc_curve, auc
 from sklearn.metrics import make_scorer
 from sklearn.base import clone
 from sklearn.externals.joblib import Memory
 from imblearn.pipeline import Pipeline
 from imblearn.metrics import geometric_mean_score
+from scipy import interp
 from scipy.stats import friedmanchisquare
 from progressbar import ProgressBar
 from tempfile import mkdtemp
@@ -220,3 +222,75 @@ class BinaryExperiment:
             self.friedman_test_results_ = ranking_results.groupby(['Classifier', 'Metric']).apply(extract_pvalue).reset_index().rename(columns={0: 'p-value'}).set_index(['Classifier', 'Metric'])
         else:
             self.friedman_test_results_ = 'Friedman test is not applied. More than two oversampling methods are needed.'
+
+    def roc(self, logging_results=True):
+        """Runs the experimental procedure and calculates the mean
+        ROC and AUC for each classifier, oversampling method, and dataset.
+
+        Writes
+        -------
+        self['roc_'] : list, len (datasets * classifiers * oversampling_methods)
+            Each entry in the list corresponds to one dataset /
+            classifier / oversampling method combination. Each entry is
+            itself a list of (`dataset`, `classifier`,
+            `oversampling_method`, `mean_tpr`, `mean_fpr`,
+            `mean_auc`). `tpr` is the True Positive Rate, `fpr` the
+            False Positive Rate and `auc` the Area under the ROC
+            curve. Each value is a cross validated mean across folds.
+            `mean_tpr` and `mean_fpr` are numpy arrays of shape (100,1).
+        """
+        self._initialize_parameters()
+        self._summarize_datasets()
+        bar = ProgressBar(redirect_stdout=True, max_value=len(self.random_states_) * len(
+            self.datasets_) * len(self.classifiers_) * len(self.oversampling_methods_))
+        iterations = 0
+
+        # Populate results dataframe
+        results_columns = ['Dataset', 'Classifier',
+                           'Oversampling method', 'AUC']
+        results_columns += ['FPR{}'.format(i) for i in range(100)]
+        results_columns += ['TPR{}'.format(i) for i in range(100)]
+
+        results = pd.DataFrame(columns=results_columns)
+        for experiment_ind, random_state in enumerate(self.random_states_):
+            cv = StratifiedKFold(n_splits=self.n_splits,
+                                 random_state=random_state, shuffle=True)
+            for dataset_name, (X, y) in self.datasets_.items():
+                for classifier_name, clf in self.classifiers_.items():
+                    if self.param_grids_[classifier_name] is not None:
+                        optimal_parameters = optimize_hyperparameters(
+                            X, y, clf, self.param_grids_[classifier_name], cv)
+                    else:
+                        optimal_parameters = {}
+                    clf.set_params(random_state=random_state,
+                                   **optimal_parameters)
+                    for oversampling_method_name, oversampling_method in self.oversampling_methods_.items():
+                        if oversampling_method is not None:
+                            oversampling_method.set_params(
+                                random_state=random_state)
+                            clf = make_pipeline(oversampling_method, clf)
+
+                        mean_tpr = 0
+                        mean_fpr = np.linspace(0, 1, 100)
+                        for train, test in cv.split(X, y):
+                            clf.fit(X.iloc[train], y.iloc[train])
+                            # compute ROC curve and AUC
+                            probas = clf.predict_proba(X.iloc[test])
+                            fpr, tpr, thresholds = roc_curve(
+                                y.iloc[test], probas[:, 1])
+                            mean_tpr += interp(mean_fpr, fpr, tpr)
+                            mean_tpr[0] = 0.0
+                        mean_tpr /= cv.get_n_splits(X, y)
+                        mean_tpr[-1] = 1.0
+                        mean_auc = auc(mean_fpr, mean_tpr)
+                        result_list = [dataset_name, classifier_name,
+                                       oversampling_method_name, mean_auc]
+                        result_list += list(mean_fpr)
+                        result_list += list(mean_tpr)
+                        result = pd.DataFrame(
+                                [result_list], columns=results_columns)
+                        results = results.append(result, ignore_index=True)
+
+        # compute means across experiments
+        grouped_results = results.groupby(['Dataset', 'Classifier', 'Oversampling method'])
+        self.roc_ = grouped_results.mean()
