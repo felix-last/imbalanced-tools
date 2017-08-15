@@ -187,6 +187,8 @@ class BinaryExperiment:
                     for oversampling_method_name, oversampling_method in self.oversampling_methods_.items():
                         if oversampling_method is not None:
                             oversampling_method.set_params(random_state=random_state)
+                            try: oversampling_method.set_params(n_jobs=self.n_jobs)
+                            except: pass
                             clf = Pipeline([(oversampling_method_name, oversampling_method), (classifier_name, clf)], memory=memory)
                         for metric_name, scorer in self.scorers_.items():
                             cv_score = cross_val_score(clf, X, y, cv=cv, scoring=scorer, n_jobs=self.n_jobs).mean()
