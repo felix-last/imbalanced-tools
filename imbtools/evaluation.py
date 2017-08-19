@@ -12,7 +12,7 @@ from os.path import join
 from re import match, sub
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score, f1_score, roc_curve, auc
+from sklearn.metrics import roc_auc_score, f1_score, recall_score, precision_score, confusion_matrix, roc_curve
 from sklearn.metrics import make_scorer
 from sklearn.base import clone
 from sklearn.externals.joblib import Memory
@@ -51,6 +51,10 @@ def optimize_hyperparameters(X, y, clf, param_grid, cv):
     clfs.fit(X, y)
     return clfs.best_params_
 
+def specificity_score(y_true, y_pred, **kwargs):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, **kwargs).ravel()
+    specificity = tn / (tn+fp)
+    return specificity
 
 class BinaryExperiment:
     """Class for comparison of oversampling algorithms performance
@@ -88,7 +92,7 @@ class BinaryExperiment:
                  datasets,
                  classifiers,
                  oversampling_methods,
-                 metrics=[roc_auc_score, f1_score, geometric_mean_score],
+                 metrics=[roc_auc_score, f1_score, geometric_mean_score, recall_score, precision_score, specificity_score],
                  n_splits=3,
                  experiment_repetitions=5,
                  random_state=None,
