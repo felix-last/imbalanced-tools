@@ -16,7 +16,7 @@ from sklearn.metrics import roc_auc_score, f1_score, recall_score, precision_sco
 from sklearn.metrics import make_scorer
 from sklearn.base import clone
 from sklearn.externals.joblib import Memory
-from imblearn.pipeline import Pipeline
+from imblearn.pipeline import Pipeline, make_pipeline
 from imblearn.metrics import geometric_mean_score
 from scipy import interp
 from scipy.stats import friedmanchisquare
