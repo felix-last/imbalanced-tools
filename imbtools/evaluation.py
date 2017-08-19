@@ -12,7 +12,7 @@ from os.path import join
 from re import match, sub
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score, f1_score, recall_score, precision_score, confusion_matrix, roc_curve
+from sklearn.metrics import roc_auc_score, f1_score, recall_score, precision_score, confusion_matrix, roc_curve, auc
 from sklearn.metrics import make_scorer
 from sklearn.base import clone
 from sklearn.externals.joblib import Memory
