@@ -11,7 +11,7 @@ from os.path import join
 from re import match, sub
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score, f1_score, recall_score, precision_score, confusion_matrix
+from sklearn.metrics import average_precision_score, f1_score, recall_score, precision_score, confusion_matrix
 from sklearn.metrics import make_scorer
 from sklearn.base import clone
 from sklearn.externals.joblib import Memory
@@ -45,7 +45,7 @@ def extract_pvalue(dataframe):
 
 def optimize_hyperparameters(X, y, clf, param_grid, cv):
     """Returns the parameters with the highest auc."""
-    clfs = GridSearchCV(estimator=clone(clf), param_grid=param_grid, scoring='roc_auc', cv=cv, refit=False)
+    clfs = GridSearchCV(estimator=clone(clf), param_grid=param_grid, scoring='average_precision', cv=cv, refit=False)
     clfs.fit(X, y)
     return clfs.best_params_
 
@@ -69,7 +69,7 @@ class BinaryExperiment:
         A list of classifiers.
     oversampling_methods : list of oversampling_methods
         A list of oversampling methods.
-    metrics : list of metrics, (default=[roc_auc_score, f1_score, geometric_mean_score])
+    metrics : list of metrics, (default=[average_precision_score, f1_score, geometric_mean_score])
         A list of classification metrics.
     n_splits : int, (default=3)
         The number of cross validation stages.
@@ -90,7 +90,7 @@ class BinaryExperiment:
                  datasets,
                  classifiers,
                  oversampling_methods,
-                 metrics=[roc_auc_score, f1_score, geometric_mean_score, recall_score, precision_score, specificity_score],
+                 metrics=[average_precision_score, f1_score, geometric_mean_score, recall_score, precision_score, specificity_score],
                  n_splits=3,
                  experiment_repetitions=5,
                  random_state=None,
@@ -148,7 +148,7 @@ class BinaryExperiment:
             raise ValueError("The parameter param_grid should be a list of hyperparameters grids with length equal to the number of classifiers.")
             
         # Converts metrics to scores
-        self.scorers_ = dict(zip(self.metrics_.keys(), [make_scorer(metric) if metric is not roc_auc_score else make_scorer(metric, needs_threshold=True) for metric in self.metrics]))
+        self.scorers_ = dict(zip(self.metrics_.keys(), [make_scorer(metric) if metric is not average_precision_score else make_scorer(metric, needs_threshold=True) for metric in self.metrics]))
 
     def _summarize_datasets(self):
         """Creates a summary of the datasets."""
