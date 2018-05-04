@@ -7,7 +7,7 @@ the performance of various oversampling algorithms.
 
 from warnings import filterwarnings
 from itertools import product
-from os.path import join
+from os.path import join, exists
 from os import listdir
 from re import match, sub
 from pickle import dump, load
@@ -22,6 +22,7 @@ from sklearn.model_selection import cross_validate
 import numpy as np
 import pandas as pd
 
+progress_write_location = '/var/tmp/binary_experiment_in_progress.csv'
 
 def read_csv_dir(dirpath):
     "Reads a directory of csv files and returns a dictionary of dataset-name:(X,y) pairs."
@@ -229,6 +230,11 @@ class BinaryExperiment:
         # Populate results dataframe
         results_columns = ['Dataset', 'Classifier', 'Oversampler', 'Metric', 'CV score']
         self.results_ = pd.DataFrame(columns=results_columns)
+        try:
+            previous_run = pd.read_csv(progress_write_location)
+        except:
+            previous_run = None
+        n_skips, reported_n_skips = 0, False
         for random_state in self.random_states_:
             cv = StratifiedKFold(n_splits=self.n_splits, random_state=random_state, shuffle=True)
             for dataset_name, (X, y) in datasets:
@@ -236,6 +242,27 @@ class BinaryExperiment:
                     if 'random_state' in clf.get_params().keys():
                         clf.set_params(random_state=random_state)
                     for oversampler_name, oversampler in self.oversamplers_:
+                        if previous_run is not None:
+                            search_array = np.asarray([dataset_name, clf_name, oversampler_name])
+                            # consider only the rows of the temporary dataframe which correspond to the current iteration, 
+                            # ignoring future or past repetitions of the same experiments
+                            begin_excerpt = self.results_.shape[0]
+                            previous_run_excerpt = previous_run.iloc[begin_excerpt : begin_excerpt + len(self.scoring), :]
+                            matching_rows = (
+                                previous_run_excerpt[results_columns[:3]] == search_array).all(1)
+                            matching_rows_count = np.sum(matching_rows)
+                            if (matching_rows_count == len(self.scoring)) and matching_rows_count > 0:
+                                # already been done, skip execution
+                                self.results_ = self.results_.append(
+                                    previous_run_excerpt.loc[matching_rows, self.results_.columns], ignore_index=True)
+                                iterations += 1
+                                n_skips = n_skips + 1
+                                continue
+                        
+                        if not reported_n_skips:
+                            reported_n_skips = True
+                            print('Loaded {} iterations from disk'.format(n_skips))
+                        # execute regularly
                         if oversampler is not None:
                             oversampler.set_params(random_state=random_state)
                             clf = Pipeline([(oversampler_name, oversampler), (clf_name, clf)])
@@ -247,6 +274,7 @@ class BinaryExperiment:
                             result_list = [dataset_name, clf_name, oversampler_name, scorer, cv_score]
                             result = pd.DataFrame([result_list], columns=results_columns)
                             self.results_ = self.results_.append(result, ignore_index=True)
+                        self.results_.to_csv(progress_write_location)
 
     def save(self, filename, pickle_datasets=False):
         """Pickles the experiment object."""
